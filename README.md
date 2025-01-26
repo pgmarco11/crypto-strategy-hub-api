@@ -1,4 +1,4 @@
 # Crypto Strategy API
-A node development API for the crypto portfolio that uses Express to read/write json 
+An API for crypto straegy Hub, uses Express.js. 
 ### https://github.com/pgmarco11/crypto-strategy-hub
 
