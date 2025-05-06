@@ -7,7 +7,7 @@ import cors from 'cors'; // Import CORS middleware
 
 const PORT = 8888;
 const app = express();
-const { get } = axios;
+const { get, post } = axios;
 
 // Get the equivalent of __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -80,6 +80,75 @@ app.post('/portfolios', async (req, res) => {
   }
 });
 
+async function fetchHistoricalData(coinId) {
+  try {
+    const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${coinId.toUpperCase()}&tsym=USD&limit=365&api_key=${process.env.REACT_APP_CRYPTOCOMPARE_API_KEY}`;
+    const response = await axios.get(url);
+    const rawData = response.data.Data.Data;    
+
+    const formattedData = rawData.map(item => ({
+      ds: new Date(item.time * 1000).toISOString().split('T')[0],
+      y: item.close
+    }));
+
+    return formattedData;
+  } catch (error) {
+    console.error(`Error fetching historical data for ${coinId}:`, error);
+    throw error;
+  }
+}
+
+// Route to get predictions from the Flask API
+app.get('/api/predictions/:coinId', async (req, res) => {
+  const { coinId } = req.params;
+
+  try {
+    // Fetch historical data
+    const historicalData = await fetchHistoricalData(coinId);  
+
+    // Call the Flask API
+    const flaskResponse = await axios.post('http://localhost:5000/api/predict', {
+      historical_data: historicalData,
+    });
+    console.log(`Flask response for ${coinId}:`, flaskResponse.data.slice(0, 5)); // Log first 5 predictions
+
+    res.json(flaskResponse.data);
+  } catch (error) {
+    console.error(`Error fetching predictions for ${coinId}:`, error.message);
+    if (error.response) {
+      console.error('Flask error response:', error.response.data);
+    }
+    res.status(500).json({ error: 'Failed to fetch predictions' });
+  }
+});
+
+// POST route to forward predictions to Flask API
+app.post('/api/predictions/:coinId', async (req, res) => {
+  const { coinId } = req.params;
+  const { historical_data } = req.body;
+
+  try {
+    if (!historical_data || !Array.isArray(historical_data)) {
+      return res.status(400).json({ error: 'Invalid or missing historical_data' });
+    }
+    
+    const flaskResponse = await axios.post('http://localhost:5000/api/predict', {
+      historical_data,
+    });
+
+    console.log(`First 5 predictions for ${coinId}:`, flaskResponse.data.slice(0, 5)); 
+    console.log(`Last prediction for ${coinId}:`, flaskResponse.data.slice(-1)); 
+
+    res.json(flaskResponse.data);
+  } catch (error) {
+    console.error(`Error posting to Flask for ${coinId}:`, error.message);
+    if (error.response) {
+      console.error('Flask error response:', error.response.data);
+    }
+    res.status(500).json({ error: 'Failed to fetch predictions from Flask' });
+  }
+});
+
 // DELETE route to remove a portfolio by ID
 app.delete('/portfolios/:id', async (req, res) => {
   const { id } = req.params;
@@ -125,8 +194,6 @@ app.put('/portfolios/:id', async (req, res) => {
   }
 });
 
-
-
 // PATCH route to update the portfolio by ID
 app.patch('/portfolios/:id', async (req, res) => {
   const { id } = req.params;
@@ -164,3 +231,4 @@ app.patch('/portfolios/:id', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
